@@ -144,7 +144,13 @@ pub fn correct_blacklevel(raw: &mut [f32], blacklevel: &[f32], whitelevel: &[f32
 
 /// Correct data by blacklevel and whitelevel on CFA (bayer) data.
 ///
-/// The output is between 0.0 .. 1.0.
+/// The output is nominally 0.0 .. 1.0, but values below the black level
+/// stay negative: read noise is symmetric around black, and clipping it
+/// here, before demosaic, turns it into a one-sided distribution that lifts
+/// and tints the deep shadows of high-ISO files. As in the DNG SDK (which
+/// keeps a stage-3 black offset through demosaic), the clip belongs after
+/// demosaic and colour conversion (`clip_euclidean_norm_avg` in rawler's
+/// own pipeline). Files with a zero black level are unaffected.
 ///
 /// This version is optimized vor vectorization, so please check
 /// modifications on godbolt before committing.
@@ -159,19 +165,16 @@ pub fn correct_blacklevel_cfa(raw: &mut [f32], width: usize, _height: usize, bla
     whitelevel[2] - blacklevel[2],
     whitelevel[3] - blacklevel[3],
   ];
-  let clip = |v: f32| {
-    if v.is_sign_negative() { 0.0 } else { v }
-  };
   // Process two bayer lines at once.
   raw.par_chunks_exact_mut(width * 2).for_each(|lines| {
     // It's bayer data, so we have two lines for sure.
     let (line0, line1) = lines.split_at_mut(width);
     //line0.array_chunks_mut::<2>().zip(line1.array_chunks_mut::<2>()).for_each(|(a, b)| {
     line0.chunks_exact_mut(2).zip(line1.chunks_exact_mut(2)).for_each(|(a, b)| {
-      a[0] = clip(a[0] - blacklevel[0]) / max[0];
-      a[1] = clip(a[1] - blacklevel[1]) / max[1];
-      b[0] = clip(b[0] - blacklevel[2]) / max[2];
-      b[1] = clip(b[1] - blacklevel[3]) / max[3];
+      a[0] = (a[0] - blacklevel[0]) / max[0];
+      a[1] = (a[1] - blacklevel[1]) / max[1];
+      b[0] = (b[0] - blacklevel[2]) / max[2];
+      b[1] = (b[1] - blacklevel[3]) / max[3];
     });
   });
 }
