@@ -248,7 +248,9 @@ impl LookupTable {
     let delta = sdelta as u32;
     let pixel = base + ((delta * (*rand & 2047) + 1024) >> 12);
     *rand = 15700 * (*rand & 65535) + (*rand >> 16);
-    pixel as u16
+    // LoveLight: saturate. At a table's last entry (65535) base + dither can
+    // exceed u16::MAX, and the cast wrapped blown pixels to near black.
+    pixel.min(u16::MAX as u32) as u16
   }
 }
 
